@@ -17,7 +17,7 @@
 
 ### 1. Клонирование и переход в папку проекта
 ```bash
-git clone [https://github.com/ВАШ_НИКНЕЙМ/gecko-next.git](https://github.com/ВАШ_НИКНЕЙМ/gecko-next.git)
+git clone https://github.com/Akiraz17/geckonext.git
 cd gecko-next/frontend
 
 ## 🚀 Быстрый запуск на любом ПК
