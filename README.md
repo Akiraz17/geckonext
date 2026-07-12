@@ -32,7 +32,7 @@ cd gecko-next/frontend
 ## Установка руками
 
 - Скачайте исходный код проекта с удаленного репозитория GitHub и перейдите в его корневую директорию:
-git clone [https://github.com/ВАШ_НИКНЕЙМ/gecko-next.git](https://github.com/ВАШ_НИКНЕЙМ/gecko-next.git)
+git clone https://github.com/Akiraz17/geckonext.git
 cd gecko-next
 - Поскольку проект спроектирован в виде изолированного клиентского приложения, перейдите в целевую подпапку frontend, где находятся файлы package.json и vite.config.ts:
 cd frontend
