@@ -1,52 +1,54 @@
 @echo off
-chcp 65001 > nul
-title Gecko Next Installer
+title Gecko Next
 
 echo ====================================================
-echo      Gecko Next: Автоматический установщик
+echo            Gecko Next Launcher
 echo ====================================================
 echo.
 
-:: 1. Проверка установленного Node.js
-node -v >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ОШИБКА] Node.js не найден на этом компьютере!
-    echo Пожалуйста, скачайте и установите Node.js с официального сайта: https://nodejs.org/
-    echo После установки перезапустите этот файл.
-    echo.
+python --version >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Python 3 not found
     pause
     exit /b
 )
 
-:: 2. Переход в папку фронтенда
-if not exist "frontend" (
-    echo [ОШИБКА] Папка "frontend" не найдена! Убедитесь, что запускаете скрипт из корня проекта.
+node -v >nul 2>&1
+if errorlevel 1 (
+    echo [ERROR] Node.js not found
     pause
     exit /b
 )
+
+echo [*] Installing backend deps...
+cd backend
+pip install -r requirements.txt -q
+cd ..
+
+echo [*] Installing frontend deps...
+cd frontend
+if not exist node_modules\ npm install
+cd ..
+
+echo.
+echo [*] Starting servers...
+echo.
+
+cd backend
+start "Gecko-Backend" cmd /c python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+cd ..
+
+timeout /t 3 /nobreak >nul
 
 cd frontend
+start "Gecko-Frontend" cmd /c npm run dev
+cd ..
 
-:: 3. Установка зависимостей (если папки node_modules еще нет)
-if not exist "node_modules" (
-    echo [1/2] Папка node_modules не найдена. Устанавливаю зависимости...
-    call npm install
-    if %errorlevel% neq 0 (
-        echo [ОШИБКА] Не удалось установить зависимости. Проверьте подключение к интернету.
-        pause
-        exit /b
-    )
-    echo [ОК] Зависимости успешно установлены!
-) else (
-    echo [ИНФО] Зависимости уже установлены, пропускаю шаг npm install.
-)
-
-:: 4. Запуск проекта
 echo.
-echo [2/2] Запускаю сервер разработки Vite...
-echo Проект автоматически откроется в браузере через несколько секунд.
-echo Для остановки сервера нажмите Ctrl + C в этом окне.
+echo ====================================================
+echo  Backend : http://127.0.0.1:8000/docs
+echo  Frontend: http://127.0.0.1:5173
+echo  Admin   : admin@gecko.local / admin
+echo ====================================================
 echo.
-
-call npm run dev
 pause

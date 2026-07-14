@@ -5,35 +5,53 @@ echo "     Gecko Next: Автоматический установщик (Unix) 
 echo "===================================================="
 echo ""
 
-# 1. Проверка Node.js
-if ! command -v node &> /dev/null
-then
+# 1. Check Python
+if ! command -v python3 &> /dev/null; then
+    echo "[ОШИБКА] Python 3 не найден!"
+    echo "Установите Python 3.11+ через brew install python@3.11"
+    exit 1
+fi
+
+# 2. Check Node.js
+if ! command -v node &> /dev/null; then
     echo "[ОШИБКА] Node.js не найден!"
-    echo "Установите Node.js через Homebrew (brew install node) или с сайта https://nodejs.org/"
+    echo "Установите Node.js: brew install node"
     exit 1
 fi
 
-# 2. Проверка папки frontend
-if [ ! -d "frontend" ]; then
-    echo "[ОШИБКА] Папка 'frontend' не найдена в текущей директории!"
-    exit 1
-fi
+# 3. Install backend dependencies
+echo "[1/3] Установка backend зависимостей..."
+cd backend
+pip install -r requirements.txt -q
+cd ..
 
+# 4. Install frontend dependencies
+echo "[2/3] Установка frontend зависимостей..."
 cd frontend
-
-# 3. Установка зависимостей
 if [ ! -d "node_modules" ]; then
-    echo "[1/2] Установка npm зависимостей..."
     npm install
-    if [ $? -ne 0 ]; then
-        echo "[ОШИБКА] Ошибка при выполнении npm install."
-        exit 1
-    fi
-else
-    echo "[ИНФО] Зависимости node_modules обнаружены, шаг установки пропущен."
 fi
+cd ..
 
-# 4. Запуск
+# 5. Start services
 echo ""
-echo "[2/2] Запуск сервера разработки Vite..."
-npm run dev
+echo "[3/3] Запуск сервисов..."
+echo ""
+
+cd backend && python3 -m uvicorn app.main:app --app-dir . --host 127.0.0.1 --port 8000 &
+BACKEND_PID=$!
+sleep 3
+
+cd ../frontend && npm run dev &
+FRONTEND_PID=$!
+
+echo ""
+echo "===================================================="
+echo " Backend:  http://127.0.0.1:8000/docs"
+echo " Frontend: http://127.0.0.1:5173/"
+echo " Admin:    admin@gecko.local / admin"
+echo "===================================================="
+echo ""
+echo "Нажмите Ctrl+C чтобы остановить серверы."
+
+wait $BACKEND_PID $FRONTEND_PID
