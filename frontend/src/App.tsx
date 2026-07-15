@@ -73,6 +73,13 @@ export default function App() {
 
   const [history, setHistory] = useState<Segment[][]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [saveStatus, setSaveStatus] = useState<'saved'|'saving'|'unsaved'>('saved');
+  const [currentTaskId, setCurrentTaskId] = useState<number | null>(null);
+  const [currentMediaId, setCurrentMediaId] = useState<number | null>(null);
+  const [verifierTasks, setVerifierTasks] = useState<any[]>([]);
+  const [verifierLoading, setVerifierLoading] = useState(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSegmentsRef = useRef<Segment[] | null>(null);
 
   const waveformRef = useRef<HTMLDivElement>(null);
   const videoPlayerRef = useRef<HTMLVideoElement>(null);
@@ -250,13 +257,63 @@ export default function App() {
   useEffect(() => { if (videoPlayerRef.current) videoPlayerRef.current.playbackRate = playbackSpeed; }, [playbackSpeed]);
   useEffect(() => { if (isPlayerReady) syncRegionsWithSegments(segments); }, [segments, activeSegmentId, isPlayerReady, syncRegionsWithSegments]);
 
+  const triggerAutoSave = useCallback((segs: Segment[]) => {
+    pendingSegmentsRef.current = segs;
+    setSaveStatus('unsaved');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      const toSave = pendingSegmentsRef.current;
+      if (!toSave) return;
+      setSaveStatus('saving');
+      try {
+        const tid = currentTaskId;
+        if (tid) {
+          await api.importSegments(tid, toSave.map(s => ({
+            start_time: s.start_time, end_time: s.end_time,
+            text: s.text, is_crosstalk: s.is_crosstalk, speaker_id: null,
+          })));
+        }
+        setSaveStatus('saved');
+      } catch { setSaveStatus('unsaved'); }
+    }, 2000);
+  }, [currentTaskId]);
+
+  const forceSave = useCallback(async () => {
+    if (saveTimerRef.current) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    const toSave = pendingSegmentsRef.current || segments;
+    setSaveStatus('saving');
+    try {
+      if (currentTaskId) {
+        await api.importSegments(currentTaskId, toSave.map(s => ({
+          start_time: s.start_time, end_time: s.end_time,
+          text: s.text, is_crosstalk: s.is_crosstalk, speaker_id: null,
+        })));
+      }
+      setSaveStatus('saved');
+    } catch { setSaveStatus('unsaved'); }
+  }, [segments, currentTaskId]);
+
+  useEffect(() => { return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); }; }, []);
+
   useEffect(() => {
     const hk = (e: KeyboardEvent) => {
       if (screen !== 'TRANSCRIBER_WORKSPACE' && screen !== 'VERIFIER_WORKSPACE') return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); }
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT') {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); forceSave(); }
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); handleUndo(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); forceSave(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); const idx = segments.findIndex(s => s.id === activeSegmentId); const next = idx >= 0 && idx < segments.length - 1 ? segments[idx + 1] : segments[0]; if (next) { setActiveSegmentId(next.id); wavesurfer.current?.setTime(next.start_time); } return; }
+      if (e.key === 'Delete' && activeSegmentId) { e.preventDefault(); deleteSegment(activeSegmentId); return; }
+      if (e.key === ' ' && !e.shiftKey) { e.preventDefault(); wavesurfer.current?.playPause(); return; }
+      if (e.key === ' ' && e.shiftKey && activeSegment) { e.preventDefault(); isolatePlayback(activeSegment.start_time, activeSegment.end_time); return; }
+      if (e.key === 'ArrowLeft') { e.preventDefault(); wavesurfer.current?.setTime(Math.max(0, (wavesurfer.current?.getCurrentTime() || 0) - 0.1)); return; }
+      if (e.key === 'ArrowRight') { e.preventDefault(); wavesurfer.current?.setTime(Math.min(videoPlayerRef.current?.duration || 9999, (wavesurfer.current?.getCurrentTime() || 0) + 0.1)); return; }
     };
     window.addEventListener('keydown', hk); return () => window.removeEventListener('keydown', hk);
-  }, [history, historyIndex, screen]);
+  }, [history, historyIndex, screen, activeSegmentId, segments]);
 
   const isolatePlayback = (start: number, end: number) => {
     if (!wavesurfer.current || !isPlayerReady) return;
@@ -293,15 +350,27 @@ export default function App() {
     if (activeSegmentId === id) setActiveSegmentId(null);
   };
 
-  const handleFieldChange = (id: number, fields: Partial<Segment>) => { setSegments(segments.map(s => s.id === id ? { ...s, ...fields } : s)); };
-  const handleFieldBlur = () => { pushToHistory(segments); };
+  const handleFieldChange = (id: number, fields: Partial<Segment>) => {
+    const upd = segments.map(s => s.id === id ? { ...s, ...fields } : s);
+    setSegments(upd); triggerAutoSave(upd);
+  };
+  const handleFieldBlur = () => { pushToHistory(segments); forceSave(); };
 
   const handleModalSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const vf = fd.get('videoFile') as File;
     const jf = fd.get('jsonFile') as File;
-    if (vf && vf.size > 0) setVideoUrl(URL.createObjectURL(vf));
+    if (vf && vf.size > 0) {
+      const localUrl = URL.createObjectURL(vf);
+      setVideoUrl(localUrl);
+      try {
+        const projects = await api.listProjects().catch(() => []);
+        const pid = projects.length > 0 ? projects[0].id : 1;
+        const uploaded = await api.uploadMedia(pid, vf);
+        if (uploaded?.id) setCurrentMediaId(uploaded.id);
+      } catch {}
+    }
     if (jf && jf.size > 0) {
       const text = await jf.text();
       const parsed = parseGeckoJson(JSON.parse(text));
@@ -315,10 +384,36 @@ export default function App() {
     setShowChecklist(true);
   };
 
-  const confirmSendToReview = () => {
+  const confirmSendToReview = async () => {
     const nr: ReviewRequest = { id: Date.now(), user: user?.name || '', timestamp: new Date().toLocaleTimeString(), status: 'PENDING', segmentCount: segments.length, segmentsSnapshot: JSON.parse(JSON.stringify(segments)) };
     setReviewRequests(prev => [nr, ...prev]); setProjectStatus('REVIEW');
     setShowChecklist(false);
+    try {
+      let tid = currentTaskId;
+      if (!tid) {
+        const projects = await api.listProjects().catch(() => []);
+        const pid = projects.length > 0 ? projects[0].id : 1;
+        const verifierRoleId = 4;
+        const verifierList = await api.listUsers().catch(() => []);
+        const verifier = verifierList.find((u: any) => u.role_id === verifierRoleId);
+        const task = await api.createTask({
+          project_id: pid,
+          media_file_id: currentMediaId || undefined,
+          assignee_id: user?.id || undefined,
+          verifier_id: verifier?.id || undefined,
+          priority: 'Medium',
+        });
+        tid = task?.id;
+        setCurrentTaskId(tid || null);
+      }
+      if (tid) {
+        await api.importSegments(tid, segments.map(s => ({
+          start_time: s.start_time, end_time: s.end_time,
+          text: s.text, is_crosstalk: s.is_crosstalk, speaker_id: null,
+        })));
+        await api.updateTask(tid, { status: 'On Review' });
+      }
+    } catch (err) { console.error('Review submit error:', err); }
     alert('Проект отправлен на проверку.');
   };
 
@@ -347,12 +442,28 @@ export default function App() {
     setScreen(user?.role === 'Verifier' ? 'VERIFIER_WORKSPACE' : 'TRANSCRIBER_WORKSPACE');
   };
 
-  const handleResolveRequest = (st: 'APPROVED' | 'REJECTED') => {
-    if (!currentInspectedRequestId) return;
-    setReviewRequests(prev => prev.map(r => r.id === currentInspectedRequestId ? { ...r, status: st, segmentsSnapshot: segments } : r));
+  const handleResolveRequest = async (st: 'APPROVED' | 'REJECTED', comment?: string) => {
+    if (!currentInspectedRequestId && !currentTaskId) return;
+    if (currentInspectedRequestId) {
+      setReviewRequests(prev => prev.map(r => r.id === currentInspectedRequestId ? { ...r, status: st, segmentsSnapshot: segments } : r));
+    }
     setProjectStatus(st === 'APPROVED' ? 'COMPLETED' : 'IN_PROGRESS');
+    try {
+      if (currentTaskId) {
+        await api.verifyTask(currentTaskId, {
+          task_id: currentTaskId,
+          decision: st === 'APPROVED' ? 'accepted' : 'rejected',
+          comment: comment || user?.name || '',
+        });
+      }
+    } catch {}
     alert(st === 'APPROVED' ? 'Разметка одобрена!' : 'Разметка возвращена на доработку.');
-    setScreen('ADMIN_DASHBOARD'); setCurrentInspectedRequestId(null);
+    if (user?.role === 'Verifier') {
+      setScreen('VERIFIER_WORKSPACE'); setSegments([]); setCurrentTaskId(null); setCurrentInspectedRequestId(null); setVideoUrl(null);
+    } else {
+      setScreen('ADMIN_DASHBOARD');
+    }
+    setCurrentInspectedRequestId(null);
   };
 
   const startResizeX = (e: React.MouseEvent) => { e.preventDefault(); const hm = (ev: MouseEvent) => { const p = (ev.clientX / window.innerWidth) * 100; if (p > 20 && p < 80) setMainSplitX(p); }; const hu = () => { window.removeEventListener('mousemove', hm); window.removeEventListener('mouseup', hu); }; window.addEventListener('mousemove', hm); window.addEventListener('mouseup', hu); };
@@ -403,7 +514,96 @@ export default function App() {
   if (screen === 'ML_ENGINEER_DASHBOARD') return <MLEngineerDashboard darkMode={darkMode} onToggleTheme={thToggle} onLogout={handleLogout} />;
   if (screen === 'CUSTOMER_DASHBOARD') return <CustomerDashboard darkMode={darkMode} onToggleTheme={thToggle} onLogout={handleLogout} />;
   if (screen === 'VERIFIER_WORKSPACE') {
-    return <VerifierWorkspace darkMode={darkMode} segments={segments} activeSegmentId={activeSegmentId} speakers={speakers} projectStatus={projectStatus} currentUser={user?.name || ''} onToggleTheme={thToggle} onLogout={handleLogout} onSetActiveSegment={setActiveSegmentId} onApprove={() => handleResolveRequest('APPROVED')} onReject={() => handleResolveRequest('REJECTED')} />;
+    if (segments.length === 0 && !currentTaskId) {
+      const localReviews = reviewRequests.filter(r => r.status === 'PENDING');
+      const mergedTasks = [
+        ...localReviews.map(r => ({ _type: 'local', id: r.id, user: r.user, timestamp: r.timestamp, segmentCount: r.segmentCount, segmentsSnapshot: r.segmentsSnapshot })),
+        ...verifierTasks.map((t: any) => ({ _type: 'api', ...t })),
+      ];
+      return (
+        <div className={`h-screen w-screen p-6 flex flex-col font-sans transition-colors ${tc(darkMode)}`}>
+          <header className={`flex justify-between items-center mb-4 border-b pb-4 transition-colors ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
+            <div>
+              <h1 className="text-xl font-black tracking-tight text-emerald-500">Панель Верификатора</h1>
+              <p className="text-xs opacity-50">Выберите задачу для проверки</p>
+            </div>
+            <div className="flex gap-2">
+              <ThemeSelector theme={theme} onChangeTheme={handleThemeChange} />
+              <button onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg">Выйти</button>
+            </div>
+          </header>
+          <div className="flex-1 overflow-y-auto">
+            <button
+              onClick={async () => {
+                setVerifierLoading(true);
+                try {
+                  const tasks = await api.listTasks({ status: 'On Review' });
+                  setVerifierTasks(tasks);
+                } catch { setVerifierTasks([]); }
+                setVerifierLoading(false);
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-6 py-3 rounded-xl mb-4 transition-colors"
+            >
+              Загрузить задачи с сервера
+            </button>
+            {verifierLoading && <div className="text-sm opacity-50">Загрузка...</div>}
+            {mergedTasks.length === 0 && !verifierLoading && (
+              <div className={`border rounded-xl p-6 text-center ${card(darkMode)}`}>
+                <p className="text-sm opacity-50">Нет задач. Отправьте разметку на проверку из редактора.</p>
+              </div>
+            )}
+            <div className="space-y-2">
+              {mergedTasks.map((t: any) => (
+                <div
+                  key={t.id}
+                  onClick={async () => {
+                    if (t._type === 'local') {
+                      const req = reviewRequests.find(r => r.id === t.id);
+                      if (req) { setCurrentInspectedRequestId(req.id); setSegments(req.segmentsSnapshot); setProjectStatus('REVIEW'); setShowWelcomeModal(true); setScreen('TRANSCRIBER_WORKSPACE'); }
+                    } else {
+                      try {
+                        setVerifierLoading(true);
+                        const segs = await api.getSegments(t.id);
+                        const mapped: Segment[] = segs.map((s: any) => ({
+                          id: s.id, start_time: s.start_time, end_time: s.end_time,
+                          text: s.text || '', is_crosstalk: s.is_crosstalk || false,
+                          speaker: 'SPEAKER_00', terms: [],
+                        }));
+                        setSegments(mapped); setCurrentTaskId(t.id); setCurrentInspectedRequestId(t.id);
+                        setProjectStatus('REVIEW');
+                        if (t.media_file_id) {
+                          const base = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+                            ? 'http://127.0.0.1:8000' : '/api';
+                          setVideoUrl(`${base}/media/serve/${t.media_file_id}?token=${encodeURIComponent(getToken() || '')}`);
+                          setShowWelcomeModal(false);
+                        } else {
+                          setShowWelcomeModal(true);
+                        }
+                        setScreen('TRANSCRIBER_WORKSPACE');
+                      } catch { alert('Не удалось загрузить сегменты'); }
+                      setVerifierLoading(false);
+                    }
+                  }}
+                  className={`p-3 border rounded-xl cursor-pointer flex justify-between items-center transition-all ${darkMode ? 'bg-black/40 border-gray-800 hover:border-emerald-500' : 'bg-gray-50 border-gray-200 hover:border-emerald-400'}`}
+                >
+                  <div>
+                    <span className="text-sm font-bold">{t._type === 'api' ? `Задача #${t.id}` : `Заявка #${t.id}`}</span>
+                    <span className="text-xs opacity-50 ml-2">{t.segmentCount || 0} сегментов</span>
+                    {t._type === 'api' && t.assignee && <span className="text-xs opacity-40 ml-2">Разметчик: {t.assignee.full_name}</span>}
+                    {t._type === 'local' && <span className="text-xs opacity-40 ml-2">От: {t.user} ({t.timestamp})</span>}
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded font-bold ${t._type === 'local' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                    {t._type === 'local' ? 'Локально' : 'На проверке'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    }
+    setScreen('TRANSCRIBER_WORKSPACE');
+    return null;
   }
 
   // --- TRANSCRIBER WORKSPACE ---
@@ -438,11 +638,17 @@ export default function App() {
           {user?.role === 'Admin' && (
             <button onClick={() => { setScreen('ADMIN_DASHBOARD'); setVideoUrl(null); setSegments([]); }} className={`border text-xs font-bold px-3 py-1.5 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-amber-400 border-amber-500/20' : 'bg-white hover:bg-gray-50 text-amber-600 border-gray-300'}`}>Дашборд</button>
           )}
+          {user?.role === 'Verifier' && (
+            <button onClick={() => { setScreen('VERIFIER_WORKSPACE'); setSegments([]); setCurrentTaskId(null); setCurrentInspectedRequestId(null); setVideoUrl(null); }} className={`border text-xs font-bold px-3 py-1.5 rounded-lg ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-emerald-400 border-emerald-500/20' : 'bg-white hover:bg-gray-50 text-emerald-600 border-gray-300'}`}>← К задачам</button>
+          )}
           <h1 className="text-base font-bold tracking-tight">Gecko Next Editor</h1>
+          <div className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${saveStatus === 'saved' ? 'bg-emerald-500/20 text-emerald-400' : saveStatus === 'saving' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'}`}>
+            {saveStatus === 'saved' ? 'Сохранено' : saveStatus === 'saving' ? 'Сохранение...' : 'Не сохранено'}
+          </div>
           <div className="text-xs opacity-60">{ROLE_NAMES[user?.role || 'Transcriber']}: <span className="font-bold text-indigo-500">{user?.name}</span></div>
           <button onClick={() => setShowWelcomeModal(true)} className={`text-xs px-3 py-1.5 border rounded-lg ${btn(darkMode)}`}>Загрузить файлы</button>
           <button onClick={() => setShowTermsModal(true)} className={`text-xs px-3 py-1.5 border rounded-lg ${darkMode ? 'bg-gray-800 border-amber-700/50 text-amber-400 hover:bg-gray-700' : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'}`}>Термины</button>
-          {user?.role === 'Admin' && currentInspectedRequestId && (<><button onClick={() => handleResolveRequest('APPROVED')} className="font-bold py-1.5 px-3 text-xs rounded-lg text-white bg-emerald-600 hover:bg-emerald-700">Принять</button><button onClick={() => handleResolveRequest('REJECTED')} className="font-bold py-1.5 px-3 text-xs rounded-lg text-white bg-red-600 hover:bg-red-700">Отклонить</button></>)}
+          {(user?.role === 'Admin' || user?.role === 'Verifier') && currentInspectedRequestId && (<><button onClick={() => handleResolveRequest('APPROVED')} className="font-bold py-1.5 px-3 text-xs rounded-lg text-white bg-emerald-600 hover:bg-emerald-700">Принять</button><button onClick={() => handleResolveRequest('REJECTED')} className="font-bold py-1.5 px-3 text-xs rounded-lg text-white bg-red-600 hover:bg-red-700">Отклонить</button></>)}
           {segments.length > 0 && (user?.role === 'Admin' || projectStatus === 'COMPLETED') && (<button onClick={handleExport} className="font-bold py-1.5 px-3 text-xs rounded-lg text-white bg-sky-600 hover:bg-sky-700">Экспорт JSON</button>)}
           {projectStatus === 'IN_PROGRESS' && user?.role === 'Transcriber' && (<button onClick={handleSendToReview} className="font-bold py-1.5 px-4 text-xs rounded-lg text-white bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90">Сдать на проверку</button>)}
           {(projectStatus === 'REVIEW' || projectStatus === 'TODO') && user?.role === 'Transcriber' && (<button onClick={handleSendToReview} disabled={segments.length === 0} className={`font-bold py-1.5 px-4 text-xs rounded-lg text-white ${segments.length === 0 ? 'bg-gray-600/50 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-500 to-purple-600 hover:opacity-90'}`}>{projectStatus === 'REVIEW' ? 'Отправить повторно' : 'Сдать на проверку'}</button>)}

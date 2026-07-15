@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Segment, Speaker, VerificationComment } from '../types';
+import { api } from '../api/client';
 
 interface Props {
   darkMode: boolean;
@@ -8,31 +9,44 @@ interface Props {
   speakers: Speaker[];
   projectStatus: string;
   currentUser: string;
+  taskId?: number;
   onToggleTheme: () => void;
   onLogout: () => void;
   onSetActiveSegment: (id: number) => void;
   onApprove: () => void;
   onReject: (comment: string) => void;
+  onLoadMedia?: () => void;
 }
 
 export default function VerifierWorkspace({
-  darkMode, segments, activeSegmentId, speakers, projectStatus, currentUser,
-  onToggleTheme, onLogout, onSetActiveSegment, onApprove, onReject,
+  darkMode, segments, activeSegmentId, speakers, projectStatus, currentUser, taskId,
+  onToggleTheme, onLogout, onSetActiveSegment, onApprove, onReject, onLoadMedia,
 }: Props) {
   const [comments, setComments] = useState<VerificationComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [checklist, setChecklist] = useState<Record<string, boolean>>({
-    'audio_match': false,
-    'boundaries': false,
-    'no_missing': false,
-    'terms': false,
-    'text_rules': false,
-    'crosstalk': false,
-    'no_empty': false,
-    'comments_processed': false,
+    'audio_match': false, 'boundaries': false, 'no_missing': false,
+    'terms': false, 'text_rules': false, 'crosstalk': false,
+    'no_empty': false, 'comments_processed': false,
   });
+
+  useEffect(() => {
+    if (taskId) {
+      api.getComments(taskId).then(serverComments => {
+        const mapped = serverComments.map((c: any) => ({
+          id: c.id,
+          segmentId: c.segment_id || 0,
+          text: c.text,
+          author: c.author_id ? `User #${c.author_id}` : 'Verifier',
+          timestamp: c.created_at ? c.created_at.slice(11, 19) : '—',
+          resolved: c.status === 'resolved',
+        }));
+        setComments(mapped);
+      }).catch(() => {});
+    }
+  }, [taskId]);
 
   const bg = darkMode ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900';
   const card = darkMode ? 'bg-gray-900/40 border-gray-800' : 'bg-white border-gray-200 shadow-sm';
@@ -40,21 +54,27 @@ export default function VerifierWorkspace({
 
   const activeSegment = segments.find(s => s.id === activeSegmentId);
 
-  const addComment = () => {
+  const addComment = async () => {
     if (!newComment.trim() || !activeSegmentId) return;
-    setComments(prev => [...prev, {
+    const localComment: VerificationComment = {
       id: Date.now(),
       segmentId: activeSegmentId,
       text: newComment.trim(),
       author: currentUser,
       timestamp: new Date().toLocaleTimeString(),
       resolved: false,
-    }]);
+    };
+    setComments(prev => [...prev, localComment]);
     setNewComment('');
+
+    if (taskId) {
+      try {
+        await api.addComment(taskId, { task_id: taskId, segment_id: activeSegmentId, text: localComment.text });
+      } catch {}
+    }
   };
 
   const segmentComments = comments.filter(c => c.segmentId === activeSegmentId);
-
   const allChecked = Object.values(checklist).every(Boolean);
 
   return (
@@ -82,6 +102,7 @@ export default function VerifierWorkspace({
             Принять разметку
           </button>
           <button onClick={onLogout} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">Выйти</button>
+          <button onClick={onLoadMedia} className="bg-sky-600 hover:bg-sky-700 text-white text-xs px-3 py-1.5 rounded-lg transition-colors">Загрузить аудио</button>
           <button onClick={onToggleTheme} className={`text-xs px-3 py-1.5 border rounded-lg transition-all ${darkMode ? 'border-gray-700 bg-gray-800 text-white hover:bg-gray-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shadow-sm'}`}>{darkMode ? 'Светлая' : 'Тёмная'}</button>
         </div>
       </header>

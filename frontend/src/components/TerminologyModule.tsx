@@ -1,31 +1,32 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { api } from '../api/client';
 
 interface Term {
   id: number;
   value: string;
-  normalizedValue: string;
+  normalized_value: string;
   type: string;
-  status: 'new' | 'on_review' | 'confirmed' | 'rejected';
+  status: string;
   comment: string;
-  category: string;
+  category?: string;
 }
 
 const DEFAULT_TERMS: Term[] = [
-  { id: 1, value: 'TATLIN', normalizedValue: 'TATLIN', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 2, value: 'VEGMAN', normalizedValue: 'VEGMAN', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 3, value: 'UNIFIED', normalizedValue: 'UNIFIED', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 4, value: 'BACKUP', normalizedValue: 'BACKUP', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 5, value: 'FLEX', normalizedValue: 'FLEX', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 6, value: 'ARCHIVE', normalizedValue: 'ARCHIVE', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
-  { id: 7, value: 'CI/CD', normalizedValue: 'CI/CD', type: 'abbreviation', status: 'confirmed', comment: '', category: 'DevOps' },
-  { id: 8, value: "API'шный", normalizedValue: 'API-шный', type: 'anglicism', status: 'new', comment: 'Русифицированный англицизм', category: 'IT' },
-  { id: 9, value: "IP'шник", normalizedValue: 'IP-шник', type: 'anglicism', status: 'new', comment: '', category: 'IT' },
-  { id: 10, value: "SSD'шник", normalizedValue: 'SSD-шник', type: 'anglicism', status: 'new', comment: '', category: 'IT' },
-  { id: 11, value: 'json', normalizedValue: 'JSON', type: 'extension', status: 'confirmed', comment: '', category: 'Форматы' },
-  { id: 12, value: 'csv', normalizedValue: 'CSV', type: 'extension', status: 'confirmed', comment: '', category: 'Форматы' },
-  { id: 13, value: 'asn1', normalizedValue: 'ASN.1', type: 'extension', status: 'on_review', comment: 'Проверить написание', category: 'Форматы' },
-  { id: 14, value: 'ASR', normalizedValue: 'ASR', type: 'abbreviation', status: 'confirmed', comment: '', category: 'ML' },
-  { id: 15, value: 'NLP', normalizedValue: 'NLP', type: 'abbreviation', status: 'confirmed', comment: '', category: 'ML' },
+  { id: 1, value: 'TATLIN', normalized_value: 'TATLIN', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 2, value: 'VEGMAN', normalized_value: 'VEGMAN', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 3, value: 'UNIFIED', normalized_value: 'UNIFIED', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 4, value: 'BACKUP', normalized_value: 'BACKUP', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 5, value: 'FLEX', normalized_value: 'FLEX', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 6, value: 'ARCHIVE', normalized_value: 'ARCHIVE', type: 'product', status: 'confirmed', comment: '', category: 'YADRO' },
+  { id: 7, value: 'CI/CD', normalized_value: 'CI/CD', type: 'abbreviation', status: 'confirmed', comment: '', category: 'DevOps' },
+  { id: 8, value: "API'шный", normalized_value: 'API-шный', type: 'anglicism', status: 'new', comment: 'Русифицированный англицизм', category: 'IT' },
+  { id: 9, value: "IP'шник", normalized_value: 'IP-шник', type: 'anglicism', status: 'new', comment: '', category: 'IT' },
+  { id: 10, value: "SSD'шник", normalized_value: 'SSD-шник', type: 'anglicism', status: 'new', comment: '', category: 'IT' },
+  { id: 11, value: 'json', normalized_value: 'JSON', type: 'extension', status: 'confirmed', comment: '', category: 'Форматы' },
+  { id: 12, value: 'csv', normalized_value: 'CSV', type: 'extension', status: 'confirmed', comment: '', category: 'Форматы' },
+  { id: 13, value: 'asn1', normalized_value: 'ASN.1', type: 'extension', status: 'on_review', comment: 'Проверить написание', category: 'Форматы' },
+  { id: 14, value: 'ASR', normalized_value: 'ASR', type: 'abbreviation', status: 'confirmed', comment: '', category: 'ML' },
+  { id: 15, value: 'NLP', normalized_value: 'NLP', type: 'abbreviation', status: 'confirmed', comment: '', category: 'ML' },
 ];
 
 const STATUS_LABELS: Record<string, string> = { new: 'Новый', on_review: 'На проверке', confirmed: 'Подтверждён', rejected: 'Отклонён' };
@@ -34,13 +35,12 @@ const STATUS_COLORS: Record<string, string> = { new: 'bg-blue-500/20 text-blue-4
 interface Props {
   darkMode: boolean;
   onClose: () => void;
+  projectId?: number;
 }
 
-export default function TerminologyModule({ darkMode, onClose }: Props) {
-  const [terms, setTerms] = useState<Term[]>(() => {
-    const saved = localStorage.getItem('gecko_terms');
-    return saved ? JSON.parse(saved) : DEFAULT_TERMS;
-  });
+export default function TerminologyModule({ darkMode, onClose, projectId = 1 }: Props) {
+  const [terms, setTerms] = useState<Term[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterCategory, setFilterCategory] = useState('all');
@@ -49,26 +49,54 @@ export default function TerminologyModule({ darkMode, onClose }: Props) {
   const [newTermComment, setNewTermComment] = useState('');
   const [checkWord, setCheckWord] = useState('');
 
-  const persistTerms = (t: Term[]) => { setTerms(t); localStorage.setItem('gecko_terms', JSON.stringify(t)); };
+  useEffect(() => {
+    (async () => {
+      try {
+        const serverTerms = await api.getTerms(projectId);
+        if (serverTerms.length > 0) {
+          setTerms(serverTerms.map((t: any) => ({ ...t, normalized_value: t.normalized_value || t.value })));
+        } else {
+          setTerms(DEFAULT_TERMS);
+        }
+      } catch {
+        const saved = localStorage.getItem('gecko_terms');
+        setTerms(saved ? JSON.parse(saved) : DEFAULT_TERMS);
+      } finally { setLoading(false); }
+    })();
+  }, [projectId]);
 
   const filtered = useMemo(() => terms.filter(t => {
-    if (search && !t.value.toLowerCase().includes(search.toLowerCase()) && !t.normalizedValue.toLowerCase().includes(search.toLowerCase())) return false;
+    if (search && !t.value.toLowerCase().includes(search.toLowerCase()) && !(t.normalized_value || '').toLowerCase().includes(search.toLowerCase())) return false;
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
     if (filterCategory !== 'all' && t.category !== filterCategory) return false;
     return true;
   }), [terms, search, filterStatus, filterCategory]);
 
-  const categories = [...new Set(terms.map(t => t.category))];
+  const categories = [...new Set(terms.map(t => t.category || t.type).filter(Boolean))];
 
-  const addTerm = () => {
+  const addTerm = async () => {
     if (!newTermValue.trim()) return;
-    const nid = Math.max(0, ...terms.map(t => t.id)) + 1;
     const v = newTermValue.trim();
-    const n = newTermNormalized.trim() || v;
-    const isLatin = /^[a-zA-Z0-9'/\-]+$/.test(v);
-    const isCyrillic = /^[а-яёА-ЯЁ0-9'/\-]+$/.test(v);
-    persistTerms([...terms, { id: nid, value: v, normalizedValue: n, type: 'general', status: 'new', comment: newTermComment.trim(), category: 'Общее' }]);
+    try {
+      const created = await api.createTerm(projectId, {
+        value: v,
+        normalized_value: newTermNormalized.trim() || v,
+        type: 'general',
+        category: 'Общее',
+        comment: newTermComment.trim(),
+      });
+      setTerms(prev => [...prev, { ...created, normalized_value: created.normalized_value || v, category: created.category || 'Общее' }]);
+    } catch {
+      const nid = Math.max(0, ...terms.map(t => t.id)) + 1;
+      const fallback: Term = { id: nid, value: v, normalized_value: newTermNormalized.trim() || v, type: 'general', status: 'new', comment: newTermComment.trim(), category: 'Общее' };
+      setTerms(prev => [...prev, fallback]);
+    }
     setNewTermValue(''); setNewTermNormalized(''); setNewTermComment('');
+  };
+
+  const changeStatus = async (termId: number, newStatus: string) => {
+    setTerms(prev => prev.map(t => t.id === termId ? { ...t, status: newStatus } : t));
+    try { await api.updateTerm(termId, { status: newStatus }); } catch {}
   };
 
   const checkOnGramota = (word: string) => {
@@ -93,7 +121,7 @@ export default function TerminologyModule({ darkMode, onClose }: Props) {
         <div className="flex justify-between items-center p-4 border-b shrink-0" style={{ borderColor: darkMode ? '#1f2937' : '#e5e7eb' }}>
           <div>
             <h2 className="text-sm font-bold">Терминологический модуль</h2>
-            <p className="text-[10px] opacity-50">{terms.length} терминов</p>
+            <p className="text-[10px] opacity-50">{terms.length} терминов {loading && '(загрузка...)'}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-lg leading-none">&times;</button>
         </div>
@@ -110,7 +138,7 @@ export default function TerminologyModule({ darkMode, onClose }: Props) {
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <button onClick={() => {
-              const csv = ['value,normalized_value,type,status,category,comment', ...terms.map(t => `"${t.value}","${t.normalizedValue}","${t.type}","${t.status}","${t.category}","${t.comment}"`)].join('\n');
+              const csv = ['value,normalized_value,type,status,category,comment', ...terms.map(t => `"${t.value}","${t.normalized_value || t.value}","${t.type}","${t.status}","${t.category || ''}","${t.comment || ''}"`)].join('\n');
               const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
               const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'terms_export.csv'; a.click();
             }} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1 rounded-lg ml-auto transition-colors">CSV</button>
@@ -128,14 +156,15 @@ export default function TerminologyModule({ darkMode, onClose }: Props) {
             <tbody>
               {filtered.map(t => {
                 const wc = wordCheckResult(t.value);
+                const normalized = t.normalized_value || t.value;
                 return (
                   <tr key={t.id} className="border-t" style={{ borderColor: darkMode ? '#1f2937' : '#e5e7eb' }}>
                     <td className="py-1.5 pr-2 font-mono font-bold">{t.value}</td>
-                    <td className="py-1.5 pr-2 font-mono text-[10px] opacity-70">{t.normalizedValue}</td>
+                    <td className="py-1.5 pr-2 font-mono text-[10px] opacity-70">{normalized}</td>
                     <td className="py-1.5 pr-2 text-[10px] opacity-60">{t.type}</td>
-                    <td className="py-1.5 pr-2 text-[10px] opacity-60">{t.category}</td>
+                    <td className="py-1.5 pr-2 text-[10px] opacity-60">{t.category || t.type}</td>
                     <td className="py-1.5 pr-2">
-                      <select value={t.status} onChange={e => { const s = e.target.value as Term['status']; persistTerms(terms.map(tt => tt.id === t.id ? { ...tt, status: s } : tt)); }} className={`text-[9px] border rounded px-1 py-0.5 font-bold ${STATUS_COLORS[t.status]} ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
+                      <select value={t.status} onChange={e => changeStatus(t.id, e.target.value)} className={`text-[9px] border rounded px-1 py-0.5 font-bold ${STATUS_COLORS[t.status] || ''} ${darkMode ? 'border-gray-700' : 'border-gray-300'}`}>
                         {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                       </select>
                     </td>

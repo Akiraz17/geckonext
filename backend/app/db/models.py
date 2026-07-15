@@ -70,7 +70,7 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=False)
+    media_file_id = Column(Integer, ForeignKey("media_files.id"), nullable=True)
     assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     verifier_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     status = Column(String(50), default="New")
@@ -139,6 +139,7 @@ class Term(Base):
     normalized_value = Column(String(200), nullable=True)
     type = Column(String(50), default="general")
     status = Column(String(50), default="new")
+    category = Column(String(50), default="general")
     comment = Column(Text, nullable=True)
 
     project = relationship("Project", back_populates="terms")
