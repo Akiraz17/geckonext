@@ -8,7 +8,7 @@ echo.
 
 where python >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo Python not found. Download from: https://www.python.org/downloads/
+    echo Python not found. Download: https://www.python.org/downloads/
     pause
     exit /b
 )
@@ -16,7 +16,7 @@ python --version
 
 where node >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
-    echo Node.js not found. Download from: https://nodejs.org/
+    echo Node.js not found. Download: https://nodejs.org/
     pause
     exit /b
 )
@@ -41,33 +41,22 @@ if not exist "node_modules" (
 echo [OK]
 
 echo.
-echo === Frontend build ===
-cd /d "%ROOT%frontend"
-call npm run build
-echo.
-echo Build exit code: %ERRORLEVEL%
-echo If non-zero, scroll up to see the error, then try:
-echo   cd /d "%ROOT%frontend"
-echo   npx vite build
-echo.
-pause
-echo.
-
 echo === Starting backend (port 8000) ===
 start "Gecko-Backend" /D "%ROOT%backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 timeout /t 3 /nobreak >nul
 
-echo === Starting frontend (port 4173) ===
-start "Gecko-Frontend" /D "%ROOT%frontend" cmd /c "npm run preview -- --port 4173 --host"
+echo === Starting frontend (port 5173, hot-reload) ===
+start "Gecko-Frontend" /D "%ROOT%frontend" cmd /c "npm run dev -- --host"
 timeout /t 3 /nobreak >nul
 
 echo.
 echo ================================================
-echo  Frontend: http://127.0.0.1:4173
+echo  Gecko Next is running!
+echo  Frontend: http://127.0.0.1:5173
 echo  API docs: http://127.0.0.1:8000/docs
 echo  Admin:    admin@gecko.local / admin
 echo ================================================
 echo.
-start "" http://127.0.0.1:4173
-echo Close "Gecko-Backend" + "Gecko-Frontend" windows to stop.
+start "" http://127.0.0.1:5173
+echo Close the "Gecko-Backend" and "Gecko-Frontend" windows to stop.
 pause
