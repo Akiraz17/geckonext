@@ -2,20 +2,20 @@
 title Gecko Next
 
 echo ================================================
-echo         Gecko Next - Windows Launcher
+echo  Gecko Next - Windows
 echo ================================================
 echo.
 
-where python >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
+python --version >nul 2>&1
+if errorlevel 1 (
     echo Python not found. Download: https://www.python.org/downloads/
     pause
     exit /b
 )
 python --version
 
-where node >nul 2>&1
-if %ERRORLEVEL% NEQ 0 (
+node --version >nul 2>&1
+if errorlevel 1 (
     echo Node.js not found. Download: https://nodejs.org/
     pause
     exit /b
@@ -25,33 +25,35 @@ node -v
 set "ROOT=%~dp0"
 
 echo.
-echo === Backend setup ===
+echo 1/3 Backend setup...
 if not exist "%ROOT%backend\.venv\Scripts\python.exe" (
     python -m venv "%ROOT%backend\.venv"
 )
 "%ROOT%backend\.venv\Scripts\python.exe" -m pip install -r "%ROOT%backend\requirements.txt" -q
-echo [OK]
+echo OK
 
 echo.
-echo === Frontend install ===
+echo 2/3 Frontend npm install...
 cd /d "%ROOT%frontend"
 if not exist "node_modules" (
     call npm install
 )
-echo [OK]
+echo OK
 
 echo.
-echo === Starting backend (separate window, port 8000) ===
-cd /d "%ROOT%backend"
-start "Gecko-Backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-cd /d "%ROOT%"
-timeout /t 3 /nobreak >nul
+echo 3/3 Starting servers...
+echo.
+start "Gecko-Backend" cmd /c "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+timeout /t 4 /nobreak >nul
+start "Gecko-Frontend" cmd /c "cd /d %ROOT%frontend && npx --yes vite --host"
+timeout /t 5 /nobreak >nul
 
+echo ================================================
+echo  Frontend: http://127.0.0.1:5173
+echo  API docs: http://127.0.0.1:8000/docs
+echo  Admin:    admin@gecko.local / admin
+echo ================================================
+start "" http://127.0.0.1:5173
 echo.
-echo === Starting frontend (in this window, port 5173) ===
-echo Open http://127.0.0.1:5173 in your browser.
-echo Press Ctrl+C to stop the frontend.
-echo.
-cd /d "%ROOT%frontend"
-npm run dev -- --host
+echo Close the two server windows to stop.
 pause
