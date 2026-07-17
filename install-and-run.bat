@@ -35,7 +35,6 @@ if errorlevel 1 (
     exit /b 1
 )
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do echo [OK] Python: %%v
-
 node -v >nul 2>&1
 if errorlevel 1 (
     echo [ERROR] Node.js not found! Install from https://nodejs.org/
@@ -62,7 +61,7 @@ echo.
 echo === [2] Frontend ===
 if not exist "%FRONTEND%\node_modules\" (
     echo   Installing npm packages...
-    cd /d "%FRONTEND%" && call npm install --silent && cd /d "%ROOT%"
+    pushd "%FRONTEND%" && call npm install --silent && popd
 ) else (
     echo   node_modules exists, skipping...
 )
@@ -72,16 +71,16 @@ goto :eof
 :build_frontend
 echo.
 echo === [3] Build frontend ===
-cd /d "%FRONTEND%"
+pushd "%FRONTEND%"
 call npx vite build --outDir dist
-cd /d "%ROOT%"
+popd
 echo   Build complete.
 goto :eof
 
 :install
 echo.
 echo ========================================
-echo   Gecko Next — Install dependencies
+echo   Gecko Next - Install dependencies
 echo ========================================
 call :check_deps
 call :setup_backend
@@ -93,7 +92,7 @@ goto :eof
 :build
 echo.
 echo ========================================
-echo   Gecko Next — Production build
+echo   Gecko Next - Production build
 echo ========================================
 call :check_deps
 call :setup_backend
@@ -107,13 +106,12 @@ goto :eof
 :backend
 echo Starting backend only...
 "%VENV%\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-cd /d "%ROOT%"
 goto :eof
 
 :start
 echo.
 echo ========================================
-echo   Gecko Next — Start
+echo   Gecko Next - Start
 echo ========================================
 call :check_deps
 if not exist "%VENV%\Scripts\python.exe" call :setup_backend
@@ -128,14 +126,16 @@ taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 echo   Backend  ^> http://127.0.0.1:8000
-start "Gecko-Backend" cmd /c "%VENV%\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
+start "Gecko-Backend" /D "%BACKEND%" "%VENV%\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 timeout /t 3 /nobreak >nul
 
 echo   Building frontend...
-cd /d "%FRONTEND%" && call npm run build --silent && cd /d "%ROOT%"
+pushd "%FRONTEND%"
+call npx vite build --outDir dist
+popd
 
 echo   Frontend ^> http://127.0.0.1:4173
-start "Gecko-Frontend" cmd /c "cd /d "%FRONTEND%" && npm run preview -- --port 4173"
+start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "npx vite preview --port 4173 --host"
 timeout /t 2 /nobreak >nul
 
 echo.
@@ -155,7 +155,7 @@ goto :eof
 :dev
 echo.
 echo ========================================
-echo   Gecko Next — Dev mode (hot-reload)
+echo   Gecko Next - Dev mode (hot-reload)
 echo ========================================
 call :check_deps
 if not exist "%VENV%\Scripts\python.exe" call :setup_backend
@@ -170,16 +170,16 @@ taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 echo   Backend  ^> http://127.0.0.1:8000  (auto-reload)
-start "Gecko-Backend" cmd /c "%VENV%\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+start "Gecko-Backend" /D "%BACKEND%" "%VENV%\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 timeout /t 3 /nobreak >nul
 
 echo   Frontend ^> http://127.0.0.1:5173  (hot-reload)
-start "Gecko-Frontend" cmd /c "cd /d "%FRONTEND%" && npm run dev -- --host"
+start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "npx vite --host"
 timeout /t 2 /nobreak >nul
 
 echo.
 echo ========================================
-echo   Gecko Next — Dev mode!
+echo   Gecko Next - Dev mode!
 echo   Frontend:  http://127.0.0.1:5173
 echo   API docs:  http://127.0.0.1:8000/docs
 echo   Admin:     admin@gecko.local / admin
