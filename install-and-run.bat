@@ -1,185 +1,192 @@
 @echo off
 setlocal enabledelayedexpansion
-title Gecko Next — Установщик
+title Gecko Next
 
-set "GECKO_DIR=%~dp0"
-set "VENV_DIR=%GECKO_DIR%backend\.venv"
-set "FRONTEND_DIR=%GECKO_DIR%frontend"
-set "BACKEND_DIR=%GECKO_DIR%backend"
+set "ROOT=%~dp0"
+set "VENV=%ROOT%backend\.venv"
+set "BACKEND=%ROOT%backend"
+set "FRONTEND=%ROOT%frontend"
 
-if /i "%~1"=="help" goto :help
-if /i "%~1"=="-h" goto :help
-if /i "%~1"=="--help" goto :help
+if /i "%~1"=="help"    goto :help
+if /i "%~1"=="-h"      goto :help
+if /i "%~1"=="--help"  goto :help
 if /i "%~1"=="install" goto :install
-if /i "%~1"=="build" goto :build
-if /i "%~1"=="backend" goto :backend_only
-
-:: Default: start
+if /i "%~1"=="build"   goto :build
+if /i "%~1"=="backend" goto :backend
+if /i "%~1"=="dev"     goto :dev
 goto :start
 
 :help
-echo Использование: install-and-run.bat [команда]
+echo Usage: install-and-run.bat [command]
 echo.
-echo Команды:
-echo   (без арг.)   Установка (если нужно) + запуск серверов + открытие браузера
-echo   start        То же самое
-echo   install      Только установка зависимостей, без запуска
-echo   build        Production-сборка frontend
-echo   backend      Запуск только backend-сервера
-echo   help         Эта справка
+echo Commands:
+echo   (none)    Install deps if needed + build frontend + start backend/frontend
+echo   dev       Install deps if needed + start backend + frontend dev mode (hot-reload)
+echo   install   Install dependencies only
+echo   build     Production build of frontend
+echo   backend   Start backend only
+echo   help      This help
 goto :eof
 
 :check_deps
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo [ОШИБКА] Python 3 не найден!
-    echo   Установите: https://www.python.org/downloads/
+    echo [ERROR] Python not found! Install from https://www.python.org/downloads/
     exit /b 1
 )
 for /f "tokens=*" %%v in ('python --version 2^>^&1') do echo [OK] Python: %%v
 
 node -v >nul 2>&1
 if errorlevel 1 (
-    echo [ОШИБКА] Node.js не найден!
-    echo   Установите: https://nodejs.org/
+    echo [ERROR] Node.js not found! Install from https://nodejs.org/
     exit /b 1
 )
 for /f "tokens=*" %%v in ('node -v 2^>^&1') do echo [OK] Node:   %%v
-
-for /f "tokens=*" %%v in ('npm -v 2^>^&1') do echo [OK] npm:    %%v
+for /f "tokens=*" %%v in ('npm -v 2^>^&1')   do echo [OK] npm:    %%v
 goto :eof
 
 :setup_backend
 echo.
-echo [1/4] Настройка backend...
-
-if not exist "%VENV_DIR%\Scripts\python.exe" (
-    echo   Создание виртуального окружения Python...
-    python -m venv "%VENV_DIR%"
+echo === [1] Backend ===
+if not exist "%VENV%\Scripts\python.exe" (
+    echo   Creating virtual env...
+    python -m venv "%VENV%"
 )
-
-call "%VENV_DIR%\Scripts\activate.bat"
-echo   Установка зависимостей Python...
-pip install -r "%BACKEND_DIR%\requirements.txt" -q
-call deactivate
-echo   Backend готов.
+echo   Installing Python packages...
+"%VENV%\Scripts\python.exe" -m pip install -r "%BACKEND%\requirements.txt" -q
+echo   Done.
 goto :eof
 
 :setup_frontend
 echo.
-echo [2/4] Настройка frontend...
-
-cd /d "%FRONTEND_DIR%"
-if not exist "node_modules\" (
-    echo   Установка npm-зависимостей (это может занять минуту)...
-    call npm install --silent
+echo === [2] Frontend ===
+if not exist "%FRONTEND%\node_modules\" (
+    echo   Installing npm packages...
+    cd /d "%FRONTEND%" && call npm install --silent && cd /d "%ROOT%"
 ) else (
-    echo   node_modules уже существует, пропускаем...
+    echo   node_modules exists, skipping...
 )
-cd /d "%GECKO_DIR%"
-echo   Frontend готов.
+echo   Done.
 goto :eof
 
 :build_frontend
 echo.
-echo [3/4] Сборка frontend (production)...
-cd /d "%FRONTEND_DIR%"
+echo === [3] Build frontend ===
+cd /d "%FRONTEND%"
 call npx vite build --outDir dist
-cd /d "%GECKO_DIR%"
-echo   Сборка завершена.
+cd /d "%ROOT%"
+echo   Build complete.
 goto :eof
 
 :install
 echo.
-echo ====================================================
-echo   Gecko Next — Установка зависимостей
-echo ====================================================
+echo ========================================
+echo   Gecko Next — Install dependencies
+echo ========================================
 call :check_deps
 call :setup_backend
 call :setup_frontend
 echo.
-echo ====================================================
-echo   Установка завершена!
-echo   Запустите: install-and-run.bat start
-echo ====================================================
+echo   Done! Run: install-and-run.bat start
 goto :eof
 
 :build
 echo.
-echo ====================================================
-echo   Gecko Next — Production сборка
-echo ====================================================
+echo ========================================
+echo   Gecko Next — Production build
+echo ========================================
 call :check_deps
 call :setup_backend
 call :setup_frontend
 call :build_frontend
 echo.
-echo ====================================================
-echo   Production-сборка: frontend\dist\
-echo   Запустите backend: install-and-run.bat backend
-echo ====================================================
+echo   Build: frontend\dist\
+echo   Run backend: install-and-run.bat backend
 goto :eof
 
-:backend_only
-echo Запуск только backend...
-call "%VENV_DIR%\Scripts\activate.bat"
-cd /d "%BACKEND_DIR%"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+:backend
+echo Starting backend only...
+"%VENV%\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd /d "%ROOT%"
 goto :eof
 
 :start
 echo.
-echo ====================================================
-echo   Gecko Next — Запуск
-echo ====================================================
+echo ========================================
+echo   Gecko Next — Start
+echo ========================================
 call :check_deps
-
-if not exist "%VENV_DIR%\Scripts\python.exe" call :setup_backend
-if not exist "%FRONTEND_DIR%\node_modules\" call :setup_frontend
+if not exist "%VENV%\Scripts\python.exe" call :setup_backend
+if not exist "%FRONTEND%\node_modules\"     call :setup_frontend
 
 echo.
-echo [4/4] Запуск серверов...
+echo === Starting servers ===
 echo.
 
-call "%VENV_DIR%\Scripts\activate.bat"
-
-echo   Останавливаю старые процессы Gecko Next...
-taskkill /FI "WindowTitle eq Gecko-Backend" /F /T >nul 2>&1
-taskkill /FI "WindowTitle eq Gecko-Frontend" /F /T >nul 2>&1
-
+echo   Stopping old instances...
+taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
 timeout /t 2 /nobreak >nul
 
-echo   Запуск backend на http://127.0.0.1:8000 ...
-cd /d "%BACKEND_DIR%"
-start "Gecko-Backend" cmd /c "%VENV_DIR%\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
-cd /d "%GECKO_DIR%"
-
+echo   Backend  ^> http://127.0.0.1:8000
+start "Gecko-Backend" cmd /c "%VENV%\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
 timeout /t 3 /nobreak >nul
 
-echo   Сборка frontend...
-cd /d "%FRONTEND_DIR%"
-call npm run build --silent >nul 2>&1
-cd /d "%GECKO_DIR%"
+echo   Building frontend...
+cd /d "%FRONTEND%" && call npm run build --silent && cd /d "%ROOT%"
 
-echo   Запуск frontend preview на http://127.0.0.1:4173 ...
-cd /d "%FRONTEND_DIR%"
-start "Gecko-Frontend" cmd /c npm run preview -- --port 4173
-cd /d "%GECKO_DIR%"
-
+echo   Frontend ^> http://127.0.0.1:4173
+start "Gecko-Frontend" cmd /c "cd /d "%FRONTEND%" && npm run preview -- --port 4173"
 timeout /t 2 /nobreak >nul
 
 echo.
-echo ====================================================
-echo   Gecko Next запущен!
+echo ========================================
+echo   Gecko Next is running!
 echo   Frontend:  http://127.0.0.1:4173
 echo   API docs:  http://127.0.0.1:8000/docs
 echo   Admin:     admin@gecko.local / admin
-echo ====================================================
+echo ========================================
+echo.
+echo   Opening browser...
+start "" http://127.0.0.1:4173
+echo   Close "Gecko-Backend" and "Gecko-Frontend" windows to stop.
+pause
+goto :eof
+
+:dev
+echo.
+echo ========================================
+echo   Gecko Next — Dev mode (hot-reload)
+echo ========================================
+call :check_deps
+if not exist "%VENV%\Scripts\python.exe" call :setup_backend
+if not exist "%FRONTEND%\node_modules\"     call :setup_frontend
+
+echo.
+echo === Starting servers ===
 echo.
 
-echo   Открываю браузер...
-start "" http://127.0.0.1:4173
+echo   Stopping old instances...
+taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-echo   Закройте окна "Gecko-Backend" и "Gecko-Frontend" чтобы остановить.
+echo   Backend  ^> http://127.0.0.1:8000  (auto-reload)
+start "Gecko-Backend" cmd /c "%VENV%\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload"
+timeout /t 3 /nobreak >nul
+
+echo   Frontend ^> http://127.0.0.1:5173  (hot-reload)
+start "Gecko-Frontend" cmd /c "cd /d "%FRONTEND%" && npm run dev -- --host"
+timeout /t 2 /nobreak >nul
+
+echo.
+echo ========================================
+echo   Gecko Next — Dev mode!
+echo   Frontend:  http://127.0.0.1:5173
+echo   API docs:  http://127.0.0.1:8000/docs
+echo   Admin:     admin@gecko.local / admin
+echo ========================================
+echo.
+echo   Opening browser...
+start "" http://127.0.0.1:5173
+echo   Close "Gecko-Backend" and "Gecko-Frontend" windows to stop.
 pause
 goto :eof
