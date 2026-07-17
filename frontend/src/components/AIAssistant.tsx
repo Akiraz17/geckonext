@@ -92,6 +92,24 @@ export function analyzeSegments(segments: Segment[]): AIHint[] {
           message: `Длинная пауза ${gap.toFixed(1)}с перед сегментом — возможна пропущенная речь`,
         });
       }
+      if (gap < -0.01) {
+        hints.push({
+          segmentId: s.id, type: 'error',
+          message: 'Нарушен порядок времени — сегмент начинается до окончания предыдущего',
+        });
+      }
+      if (text && prev.text && /[а-яёa-z]$/i.test(prev.text) && /^[а-яёa-z]/i.test(text)) {
+        hints.push({
+          segmentId: s.id, type: 'warning',
+          message: `Возможно слово разрезано между сегментами #${prev.id} и #${s.id}: "...${prev.text.slice(-20)} | ${text.slice(0, 20)}..."`,
+        });
+      }
+    }
+    if (duration < 0.3 && (!text || !SHORT_REPLIES.some(r => text.toLowerCase() === r))) {
+      hints.push({
+        segmentId: s.id, type: 'warning',
+        message: `Очень короткий сегмент (${duration.toFixed(2)}с)${text ? ': "' + text + '"' : ''}`,
+      });
     }
   }
 

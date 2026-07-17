@@ -25,6 +25,7 @@ class ProjectOut(BaseModel):
     customer: Optional[str] = None
     status: str
     deadline: Optional[datetime] = None
+    instruction_path: Optional[str] = None
     created_at: datetime
 
     class Config:

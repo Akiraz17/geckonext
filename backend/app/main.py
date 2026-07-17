@@ -135,6 +135,21 @@ def log_audit(db: Session, user_id: int, entity_type: str, entity_id: int, actio
     ))
 
 
+def ensure_project(db: Session, project_id: int = None, name: str = "Default Project") -> int:
+    if project_id:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if project:
+            return project.id
+    project = db.query(Project).first()
+    if project:
+        return project.id
+    project = Project(name=name, description="Автосозданный проект", status="active")
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return project.id
+
+
 # ======================= AUTH =======================
 
 @app.post("/auth/login", response_model=TokenOut)
@@ -180,7 +195,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
 # ======================= USERS =======================
 
 @app.get("/users", response_model=list[UserOut])
-def list_users(db: Session = Depends(get_db), _=Depends(require_role("Admin", "Supervisor"))):
+def list_users(db: Session = Depends(get_db), _=Depends(require_role("Admin", "Supervisor", "Transcriber", "Verifier"))):
     return db.query(User).all()
 
 
@@ -270,8 +285,13 @@ def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
 
+    from sqlalchemy import text
+    db.execute(text("DELETE FROM comments WHERE author_id = :uid"), {"uid": user_id})
+    db.execute(text("DELETE FROM verification_results WHERE verifier_id = :uid"), {"uid": user_id})
+    db.execute(text("UPDATE tasks SET assignee_id = NULL WHERE assignee_id = :uid"), {"uid": user_id})
+    db.execute(text("UPDATE tasks SET verifier_id = NULL WHERE verifier_id = :uid"), {"uid": user_id})
+    db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
     log_audit(db, current_user.id, "user", user_id, "deleted")
-    db.delete(user)
     db.commit()
 
 
@@ -303,7 +323,7 @@ def list_audit_logs(db: Session = Depends(get_db), _=Depends(require_role("Admin
 @app.get("/projects", response_model=List[ProjectOut])
 def list_projects(
     db: Session = Depends(get_db),
-    _=Depends(require_role("Admin", "Supervisor", "Customer")),
+    _=Depends(require_role("Admin", "Supervisor", "Customer", "Transcriber", "Verifier")),
 ):
     return db.query(Project).all()
 
@@ -322,6 +342,7 @@ def get_project(project_id: int, db: Session = Depends(get_db), _=Depends(requir
         "customer": project.customer,
         "status": project.status,
         "deadline": project.deadline.isoformat() if project.deadline else None,
+        "instruction_path": project.instruction_path,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "task_count": task_count,
         "completed_tasks": completed,
@@ -388,7 +409,7 @@ def list_tasks(
     if current_user.role.name == "Transcriber":
         query = query.filter(Task.assignee_id == current_user.id)
     elif current_user.role.name == "Verifier":
-        query = query.filter(Task.verifier_id == current_user.id)
+        query = query.filter(Task.status.in_(["On Review", "Rework", "In Progress"]))
     if status_filter:
         query = query.filter(Task.status == status_filter)
     if project_id:
@@ -476,17 +497,21 @@ def get_task_stats(task_id: int, db: Session = Depends(get_db), _=Depends(get_cu
 def create_task(
     data: TaskCreate,
     db: Session = Depends(get_db),
-    current_user=Depends(require_role("Admin", "Supervisor")),
+    current_user=Depends(require_role("Admin", "Supervisor", "Transcriber", "Verifier")),
 ):
-    project = db.query(Project).filter(Project.id == data.project_id).first()
-    if not project:
-        raise HTTPException(status_code=400, detail="Project not found")
+    project_id = ensure_project(db, data.project_id)
+
+    role = current_user.role.name
+    assignee_id = data.assignee_id
+    verifier_id = data.verifier_id
+    if role in ("Transcriber", "Verifier"):
+        assignee_id = assignee_id or current_user.id
 
     task = Task(
-        project_id=data.project_id,
+        project_id=project_id,
         media_file_id=data.media_file_id,
-        assignee_id=data.assignee_id,
-        verifier_id=data.verifier_id,
+        assignee_id=assignee_id,
+        verifier_id=verifier_id,
         status="New",
         priority=data.priority,
         deadline=data.deadline,
@@ -516,7 +541,7 @@ def update_task(
     if data.status is not None:
         if role in ("Admin", "Supervisor"):
             task.status = data.status
-        elif role == "Transcriber" and old_status in ("New", "Assigned", "In Progress"):
+        elif role == "Transcriber" and old_status in ("New", "Assigned", "In Progress", "Rework"):
             if data.status in ("In Progress", "On Review"):
                 task.status = data.status
             else:
@@ -802,6 +827,14 @@ def verify_task(
         task.status = "Accepted"
     elif data.decision == "rejected":
         task.status = "Rework"
+        # Also store the rejection reason as a comment so the transcriber can see it
+        if data.comment:
+            db.add(Comment(
+                task_id=task_id,
+                segment_id=None,
+                author_id=current_user.id,
+                text=f"Причина отклонения: {data.comment}",
+            ))
 
     log_audit(db, current_user.id, "task", task_id, f"verified: {data.decision}", new_value=data.comment)
     db.commit()
@@ -1041,19 +1074,17 @@ async def upload_media(
     project_id: int = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(require_role("Admin", "Supervisor")),
+    current_user=Depends(require_role("Admin", "Supervisor", "Transcriber", "Verifier")),
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project_id = ensure_project(db, project_id)
 
     ext = file.filename.rsplit(".", 1)[-1].lower() if file.filename else "bin"
     saved_path = UPLOAD_DIR / f"{project_id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}"
     content = await file.read()
     saved_path.write_bytes(content)
 
-    is_audio = ext in ("wav", "mp3", "ogg", "flac", "m4a", "aac")
-    is_video = ext in ("mp4", "webm", "avi", "mov", "mkv")
+    is_video = ext in ("mp4", "webm", "avi", "mov", "mkv", "mpg", "mpeg", "wmv", "flv")
+    is_audio = not is_video and ext in ("wav", "mp3", "ogg", "flac", "m4a", "aac")
 
     media = MediaFile(
         project_id=project_id,
@@ -1100,15 +1131,16 @@ def delete_media(media_id: int, db: Session = Depends(get_db), current_user=Depe
 
 
 @app.get("/media/serve/{media_id}")
-def serve_media(media_id: int, token: str = Query(None), db: Session = Depends(get_db)):
-    if token:
-        try:
-            from app.core.security import decode_access_token
-            payload = decode_access_token(token)
-            if not payload:
-                raise HTTPException(status_code=401)
-        except:
+def serve_media(media_id: int, token: str = Query(default=""), db: Session = Depends(get_db)):
+    if not token:
+        raise HTTPException(status_code=401, detail="Token required")
+    try:
+        from app.core.security import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
             raise HTTPException(status_code=401)
+    except:
+        raise HTTPException(status_code=401)
     media = db.query(MediaFile).filter(MediaFile.id == media_id).first()
     if not media:
         raise HTTPException(status_code=404)
@@ -1121,6 +1153,72 @@ def serve_media(media_id: int, token: str = Query(None), db: Session = Depends(g
     ext = path.suffix.lstrip(".").lower()
     mime_map = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg", "flac": "audio/flac", "m4a": "audio/mp4", "aac": "audio/aac", "mp4": "video/mp4", "webm": "video/webm", "avi": "video/x-msvideo", "mov": "video/quicktime", "mkv": "video/x-matroska"}
     return FileResponse(path, media_type=mime_map.get(ext, "application/octet-stream"))
+
+
+# ======================= INSTRUCTIONS =======================
+
+@app.post("/projects/{project_id}/instruction")
+async def upload_instruction(
+    project_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role("Admin", "Supervisor")),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    saved_path = UPLOAD_DIR / f"instruction_{project_id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{file.filename}"
+    content = await file.read()
+    saved_path.write_bytes(content)
+
+    project.instruction_path = str(saved_path)
+    log_audit(db, current_user.id, "project", project_id, f"instruction_uploaded {file.filename}")
+    db.commit()
+
+    return {"filename": file.filename, "path": str(saved_path)}
+
+
+@app.get("/projects/{project_id}/instruction/download")
+def download_instruction(
+    project_id: int,
+    db: Session = Depends(get_db),
+    token: str = Query(default=""),
+    _=Depends(get_current_user),
+):
+    if not token:
+        raise HTTPException(status_code=401, detail="Token required")
+    try:
+        from app.core.security import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
+            raise HTTPException(status_code=401)
+    except:
+        raise HTTPException(status_code=401)
+
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if not project.instruction_path:
+        raise HTTPException(status_code=404, detail="No instruction file")
+    path = Path(project.instruction_path)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    return FileResponse(path, filename=path.name)
+
+
+@app.delete("/projects/{project_id}/instruction", status_code=204)
+def delete_instruction(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role("Admin")),
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404)
+    project.instruction_path = None
+    log_audit(db, current_user.id, "project", project_id, "instruction_deleted")
+    db.commit()
 
 
 # ======================= EXPORT =======================

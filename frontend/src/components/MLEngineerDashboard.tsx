@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../api/client';
+import ThemeSelector from './ThemeSelector';
+import { ThemeState } from '../themes';
 
-interface Props { darkMode: boolean; onToggleTheme: () => void; onLogout: () => void; }
+interface Props { darkMode: boolean; theme: ThemeState; onToggleTheme: () => void; onChangeTheme: (color: string, isDark: boolean) => void; onLogout: () => void; onNavigate: (screen: string) => void; }
 
-export default function MLEngineerDashboard({ darkMode, onToggleTheme, onLogout }: Props) {
+export default function MLEngineerDashboard({ darkMode, theme, onToggleTheme, onChangeTheme, onLogout, onNavigate }: Props) {
   const [exports, setExports] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -25,8 +27,9 @@ export default function MLEngineerDashboard({ darkMode, onToggleTheme, onLogout 
           <h1 className="text-xl font-black tracking-tight text-sky-500">Панель ML-инженера</h1>
           <p className="text-xs opacity-50">Выгрузки данных и экспорт для ML-обучения</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={onToggleTheme} className={`text-xs px-3 py-1.5 border rounded-lg transition-all ${darkMode ? 'border-gray-700 bg-gray-800 text-white hover:bg-gray-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50 shadow-sm'}`}>{darkMode ? 'Светлая тема' : 'Тёмная тема'}</button>
+        <div className="flex gap-2 items-center">
+          <button onClick={() => onNavigate('ADMIN_DASHBOARD')} className="bg-amber-600/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white transition-all">Администрирование</button>
+          <ThemeSelector theme={theme} onChangeTheme={onChangeTheme} />
           <button onClick={onLogout} className="bg-red-600/20 text-red-500 border border-red-500/30 text-xs px-4 py-2 rounded-xl hover:bg-red-600 hover:text-white transition-all">Выйти</button>
         </div>
       </header>

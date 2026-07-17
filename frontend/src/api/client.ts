@@ -1,4 +1,4 @@
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+const API_BASE = window.location.protocol === 'file:' 
   ? 'http://127.0.0.1:8000'
   : '/api';
 
@@ -228,6 +228,19 @@ export const api = {
     return request('/media/upload', { method: 'POST', body: formData });
   },
   deleteMedia(id: number): Promise<null> { return request(`/media/${id}`, { method: 'DELETE' }); },
+
+  // Instructions
+  async uploadInstruction(projectId: number, file: File): Promise<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request(`/projects/${projectId}/instruction`, { method: 'POST', body: formData });
+  },
+  getInstructionUrl(projectId: number): string {
+    return `${API_BASE}/projects/${projectId}/instruction/download?token=${encodeURIComponent(getToken() || '')}`;
+  },
+  deleteInstruction(projectId: number): Promise<null> {
+    return request(`/projects/${projectId}/instruction`, { method: 'DELETE' });
+  },
 
   // Export
   exportTask(taskId: number, format: string = 'gecko_json'): Promise<any> {

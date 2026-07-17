@@ -1,7 +1,7 @@
 import React from 'react';
 
 export type UserRole = 'Admin' | 'Supervisor' | 'Transcriber' | 'Verifier' | 'ML Engineer' | 'Customer';
-export type AppScreen = 'LOGIN' | 'ADMIN_DASHBOARD' | 'SUPERVISOR_DASHBOARD' | 'TRANSCRIBER_WORKSPACE' | 'VERIFIER_WORKSPACE' | 'ML_ENGINEER_DASHBOARD' | 'CUSTOMER_DASHBOARD';
+export type AppScreen = 'LOGIN' | 'ADMIN_DASHBOARD' | 'SUPERVISOR_DASHBOARD' | 'TRANSCRIBER_WORKSPACE' | 'VERIFIER_TASKS' | 'VERIFIER_EDITOR' | 'ML_ENGINEER_DASHBOARD' | 'CUSTOMER_DASHBOARD';
 
 export interface UserSession {
   id: number;
@@ -72,7 +72,7 @@ export function getRoleHomeScreen(role: UserRole): AppScreen {
     case 'Admin': return 'ADMIN_DASHBOARD';
     case 'Supervisor': return 'SUPERVISOR_DASHBOARD';
     case 'Transcriber': return 'TRANSCRIBER_WORKSPACE';
-    case 'Verifier': return 'VERIFIER_WORKSPACE';
+    case 'Verifier': return 'VERIFIER_TASKS';
     case 'ML Engineer': return 'ML_ENGINEER_DASHBOARD';
     case 'Customer': return 'CUSTOMER_DASHBOARD';
   }
