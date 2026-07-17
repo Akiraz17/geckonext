@@ -41,22 +41,17 @@ if not exist "node_modules" (
 echo [OK]
 
 echo.
-echo === Starting backend (port 8000) ===
-start "Gecko-Backend" /D "%ROOT%backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-timeout /t 3 /nobreak >nul
-
-echo === Starting frontend (port 5173, hot-reload) ===
-start "Gecko-Frontend" /D "%ROOT%frontend" cmd /c "npm run dev -- --host"
+echo === Starting backend (separate window, port 8000) ===
+cd /d "%ROOT%backend"
+start "Gecko-Backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+cd /d "%ROOT%"
 timeout /t 3 /nobreak >nul
 
 echo.
-echo ================================================
-echo  Gecko Next is running!
-echo  Frontend: http://127.0.0.1:5173
-echo  API docs: http://127.0.0.1:8000/docs
-echo  Admin:    admin@gecko.local / admin
-echo ================================================
+echo === Starting frontend (in this window, port 5173) ===
+echo Open http://127.0.0.1:5173 in your browser.
+echo Press Ctrl+C to stop the frontend.
 echo.
-start "" http://127.0.0.1:5173
-echo Close the "Gecko-Backend" and "Gecko-Frontend" windows to stop.
+cd /d "%ROOT%frontend"
+npm run dev -- --host
 pause
