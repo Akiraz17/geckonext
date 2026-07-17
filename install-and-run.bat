@@ -72,7 +72,8 @@ goto :eof
 echo.
 echo === [3] Build frontend ===
 pushd "%FRONTEND%"
-call npm run build
+echo   Running vite build (skipping tsc for Windows compat)...
+call node_modules\.bin\vite.cmd build --outDir dist
 if errorlevel 1 (
     popd
     echo [ERROR] Frontend build failed!
