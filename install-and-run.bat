@@ -43,9 +43,11 @@ echo OK
 echo.
 echo 3/3 Starting servers...
 echo.
-start "Gecko-Backend" cmd /c "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+start "Gecko-Backend" /D "%ROOT%backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 timeout /t 4 /nobreak >nul
-start "Gecko-Frontend" cmd /c "cd /d %ROOT%frontend && npx --yes vite --host"
+
+start "Gecko-Frontend" /D "%ROOT%frontend" cmd /c "npx --yes vite --host"
 timeout /t 5 /nobreak >nul
 
 echo ================================================
