@@ -32,12 +32,16 @@ export default function SupervisorDashboard({ darkMode, theme, onToggleTheme, on
   const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [apiOnline, setApiOnline] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [users, setUsers] = useState<any[]>([]);
+  const [reassignId, setReassignId] = useState<number | ''>('');
+  const [reassignMsg, setReassignMsg] = useState('');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const list = await api.listTasks();
+        const [list, userList] = await Promise.all([api.listTasks(), api.listUsers().catch(() => [])]);
+        setUsers(userList);
         if (list.length > 0) {
           setTasks(list.map((t: any) => ({
             id: t.id, project: `Проект #${t.project_id}`, file: `task_${t.id}`,
@@ -80,7 +84,6 @@ export default function SupervisorDashboard({ darkMode, theme, onToggleTheme, on
           <p className="text-xs opacity-50">Контроль проекта, распределение задач, аналитика {apiOnline && <span className="text-emerald-400">● online</span>}</p>
         </div>
         <div className="flex gap-2 items-center">
-          <button onClick={() => onNavigate('ADMIN_DASHBOARD')} className="bg-amber-600/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white transition-all">Администрирование</button>
           <ThemeSelector theme={theme} onChangeTheme={onChangeTheme} />
           <button onClick={onLogout} className="bg-red-600/20 text-red-500 border border-red-500/30 text-xs px-4 py-2 rounded-xl hover:bg-red-600 hover:text-white transition-all">Выйти</button>
         </div>
@@ -165,8 +168,17 @@ export default function SupervisorDashboard({ darkMode, theme, onToggleTheme, on
                     <div className="flex justify-between"><span>Сегментов:</span><span className="text-indigo-400">{selectedTask.segment_count || 0}</span></div>
                     <div className="flex justify-between"><span>Замечаний:</span><span className="text-amber-400">{selectedTask.comment_count || 0}</span></div>
                   </div>
+                  <button onClick={async () => { try { const q = await api.runQualityChecks(selectedTask.id); alert(`Авто-проверка завершена: ${q.checks?.length || 0} проверок`); } catch { alert('Сервер недоступен'); } }} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold py-1.5 rounded-lg transition-colors mt-2">Запустить авто-проверку</button>
                 </div>
-                <button onClick={() => alert('Задача перераспределена')} className="w-full bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold py-2 rounded-lg transition-colors mt-2">Перераспределить задачу</button>
+                <div className={`border-t pt-3 mt-3 ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
+                  <h4 className="font-bold text-xs mb-2">Перераспределить</h4>
+                  <select value={reassignId} onChange={e => setReassignId(e.target.value ? Number(e.target.value) : '')} className={`w-full text-xs border rounded px-2 py-1 focus:outline-none ${darkMode ? 'bg-black border-gray-800 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>
+                    <option value="">Выберите исполнителя...</option>
+                    {users.filter((u: any) => u.role?.name === 'Transcriber' || u.role?.name === 'Verifier').map((u: any) => <option key={u.id} value={u.id}>{u.full_name} ({u.role?.name})</option>)}
+                  </select>
+                  <button onClick={async () => { if (!reassignId) return; try { await api.updateTask(selectedTask.id, { assignee_id: reassignId }); setReassignMsg('Сохранено!'); setTimeout(() => setReassignMsg(''), 2000); } catch { alert('Ошибка'); } }} disabled={!reassignId} className={`w-full text-xs font-bold py-2 rounded-lg transition-colors mt-2 ${reassignId ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-600/30 cursor-not-allowed text-gray-500'}`}>Назначить исполнителя</button>
+                  {reassignMsg && <p className="text-[10px] text-emerald-400 mt-1">{reassignMsg}</p>}
+                </div>
               </div>
             </>
           ) : (

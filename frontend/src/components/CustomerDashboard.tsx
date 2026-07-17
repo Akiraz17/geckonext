@@ -10,6 +10,9 @@ export default function CustomerDashboard({ darkMode, theme, onToggleTheme, onCh
   const [analytics, setAnalytics] = useState<Map<number, any>>(new Map());
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newDesc, setNewDesc] = useState('');
 
   useEffect(() => {
     (async () => {
@@ -35,7 +38,6 @@ export default function CustomerDashboard({ darkMode, theme, onToggleTheme, onCh
           <p className="text-xs opacity-50">Статус проектов, отчёты, приёмка результатов</p>
         </div>
         <div className="flex gap-2 items-center">
-          <button onClick={() => onNavigate('ADMIN_DASHBOARD')} className="bg-amber-600/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white transition-all">Администрирование</button>
           <ThemeSelector theme={theme} onChangeTheme={onChangeTheme} />
           <button onClick={onLogout} className="bg-red-600/20 text-red-500 border border-red-500/30 text-xs px-4 py-2 rounded-xl hover:bg-red-600 hover:text-white transition-all">Выйти</button>
         </div>
@@ -47,12 +49,19 @@ export default function CustomerDashboard({ darkMode, theme, onToggleTheme, onCh
         <div className="flex-1 grid grid-cols-2 gap-6 min-h-0">
           <div className={`border rounded-2xl p-4 flex flex-col min-h-0 transition-all ${card}`}>
             <h3 className="text-sm font-bold text-emerald-500 mb-3">Проекты</h3>
+            <button onClick={() => setShowCreate(!showCreate)} className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors mb-3">{showCreate ? 'Отмена' : '+ Создать проект'}</button>
+            {showCreate && (
+              <div className={`p-3 border rounded-xl mb-3 space-y-2 ${darkMode ? 'bg-black/40 border-gray-800' : 'bg-gray-50 border-gray-200'}`}>
+                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Название проекта" className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${darkMode ? 'bg-black border-gray-800 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                <input value={newDesc} onChange={e => setNewDesc(e.target.value)} placeholder="Описание (необязательно)" className={`w-full border rounded px-2 py-1.5 text-xs focus:outline-none ${darkMode ? 'bg-black border-gray-800 text-white' : 'bg-white border-gray-300 text-gray-900'}`} />
+                <button onClick={async () => { if (!newName.trim()) return; try { await api.createProject({ name: newName.trim(), description: newDesc.trim() || undefined }); setNewName(''); setNewDesc(''); setShowCreate(false); const p = await api.listProjects(); setProjects(p); } catch { alert('Не удалось создать проект'); } }} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold py-1.5 rounded-lg">Создать</button>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto space-y-3 pr-1">
               {projects.length === 0 ? (
                 <div className="text-xs opacity-50 space-y-1">
                   <p>Проектов пока нет.</p>
-                  <p className="opacity-40">Проект создаётся при первой отправке разметки на проверку, либо через <code className="bg-gray-800 px-1 rounded">POST /projects</code> в API.</p>
-                  <p className="opacity-40">После разметки и верификации здесь появится статистика.</p>
+                  <p className="opacity-40">Создайте проект через форму выше или через API.</p>
                 </div>
               ) : (
                 projects.map(p => {

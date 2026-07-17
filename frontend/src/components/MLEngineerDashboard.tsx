@@ -28,7 +28,6 @@ export default function MLEngineerDashboard({ darkMode, theme, onToggleTheme, on
           <p className="text-xs opacity-50">Выгрузки данных и экспорт для ML-обучения</p>
         </div>
         <div className="flex gap-2 items-center">
-          <button onClick={() => onNavigate('ADMIN_DASHBOARD')} className="bg-amber-600/20 text-amber-400 border border-amber-500/30 text-[10px] font-bold px-3 py-1.5 rounded-lg hover:bg-amber-600 hover:text-white transition-all">Администрирование</button>
           <ThemeSelector theme={theme} onChangeTheme={onChangeTheme} />
           <button onClick={onLogout} className="bg-red-600/20 text-red-500 border border-red-500/30 text-xs px-4 py-2 rounded-xl hover:bg-red-600 hover:text-white transition-all">Выйти</button>
         </div>
