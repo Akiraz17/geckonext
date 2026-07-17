@@ -44,10 +44,12 @@ echo.
 echo 3/3 Starting servers...
 echo.
 
+:: Backend in a new window, working dir = backend/
 start "Gecko-Backend" /D "%ROOT%backend" "%ROOT%backend\.venv\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 timeout /t 4 /nobreak >nul
 
-start "Gecko-Frontend" /D "%ROOT%frontend" cmd /c "npx --yes vite --host"
+:: Frontend in a new window via helper batch (cd + npx vite)
+start "Gecko-Frontend" "%ROOT%frontend\start.bat"
 timeout /t 5 /nobreak >nul
 
 echo ================================================
@@ -57,5 +59,5 @@ echo  Admin:    admin@gecko.local / admin
 echo ================================================
 start "" http://127.0.0.1:5173
 echo.
-echo Close the two server windows to stop.
+echo Close "Gecko-Backend" and "Gecko-Frontend" to stop.
 pause
