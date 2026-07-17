@@ -72,7 +72,7 @@ goto :eof
 echo.
 echo === [3] Build frontend ===
 pushd "%FRONTEND%"
-call npx vite build --outDir dist
+call npm run build
 if errorlevel 1 (
     popd
     echo [ERROR] Frontend build failed!
