@@ -20,8 +20,8 @@ goto :start
 echo Usage: install-and-run.bat [command]
 echo.
 echo Commands:
-echo   (none)    Install deps if needed + build frontend + start backend/frontend
-echo   dev       Install deps if needed + start backend + frontend dev mode (hot-reload)
+echo   (none)    Install deps + build frontend + start servers
+echo   dev       Install deps + start backend + frontend dev mode (hot-reload)
 echo   install   Install dependencies only
 echo   build     Production build of frontend
 echo   backend   Start backend only
@@ -61,7 +61,7 @@ echo.
 echo === [2] Frontend ===
 if not exist "%FRONTEND%\node_modules\" (
     echo   Installing npm packages...
-    pushd "%FRONTEND%" && call npm install --silent && popd
+    pushd "%FRONTEND%" && call npm install && popd
 ) else (
     echo   node_modules exists, skipping...
 )
@@ -73,6 +73,11 @@ echo.
 echo === [3] Build frontend ===
 pushd "%FRONTEND%"
 call npx vite build --outDir dist
+if errorlevel 1 (
+    popd
+    echo [ERROR] Frontend build failed!
+    exit /b 1
+)
 popd
 echo   Build complete.
 goto :eof
@@ -98,6 +103,7 @@ call :check_deps
 call :setup_backend
 call :setup_frontend
 call :build_frontend
+if errorlevel 1 pause
 echo.
 echo   Build: frontend\dist\
 echo   Run backend: install-and-run.bat backend
@@ -118,8 +124,12 @@ if not exist "%VENV%\Scripts\python.exe" call :setup_backend
 if not exist "%FRONTEND%\node_modules\"     call :setup_frontend
 
 echo.
-echo === Starting servers ===
+echo === Building frontend ===
+call :build_frontend
+if errorlevel 1 pause & goto :eof
+
 echo.
+echo === Starting servers ===
 
 echo   Stopping old instances...
 taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
@@ -129,14 +139,9 @@ echo   Backend  ^> http://127.0.0.1:8000
 start "Gecko-Backend" /D "%BACKEND%" "%VENV%\Scripts\python.exe" -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 timeout /t 3 /nobreak >nul
 
-echo   Building frontend...
-pushd "%FRONTEND%"
-call npx vite build --outDir dist
-popd
-
 echo   Frontend ^> http://127.0.0.1:4173
-start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "npx vite preview --port 4173 --host"
-timeout /t 2 /nobreak >nul
+start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "node_modules\.bin\vite.cmd preview --port 4173 --host 0.0.0.0"
+timeout /t 3 /nobreak >nul
 
 echo.
 echo ========================================
@@ -148,7 +153,7 @@ echo ========================================
 echo.
 echo   Opening browser...
 start "" http://127.0.0.1:4173
-echo   Close "Gecko-Backend" and "Gecko-Frontend" windows to stop.
+echo   Close the "Gecko-Backend" and "Gecko-Frontend" windows to stop.
 pause
 goto :eof
 
@@ -163,7 +168,6 @@ if not exist "%FRONTEND%\node_modules\"     call :setup_frontend
 
 echo.
 echo === Starting servers ===
-echo.
 
 echo   Stopping old instances...
 taskkill /FI "WindowTitle eq Gecko-*" /F /T >nul 2>&1
@@ -174,8 +178,8 @@ start "Gecko-Backend" /D "%BACKEND%" "%VENV%\Scripts\python.exe" -m uvicorn app.
 timeout /t 3 /nobreak >nul
 
 echo   Frontend ^> http://127.0.0.1:5173  (hot-reload)
-start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "npx vite --host"
-timeout /t 2 /nobreak >nul
+start "Gecko-Frontend" /D "%FRONTEND%" cmd /c "node_modules\.bin\vite.cmd --host 0.0.0.0"
+timeout /t 3 /nobreak >nul
 
 echo.
 echo ========================================
@@ -187,6 +191,6 @@ echo ========================================
 echo.
 echo   Opening browser...
 start "" http://127.0.0.1:5173
-echo   Close "Gecko-Backend" and "Gecko-Frontend" windows to stop.
+echo   Close the "Gecko-Backend" and "Gecko-Frontend" windows to stop.
 pause
 goto :eof
